@@ -6,6 +6,8 @@ import {
   updateTransaction,
   deleteTransaction,
   filterTransactions,
+  searchTransactions,
+  exportTransactions,
 } from "../controllers/transactionController.js";
 
 const router = express.Router();
@@ -25,5 +27,11 @@ router.delete("/delete-transaction/:id", requireSignIn, deleteTransaction);
 
 // Filter transactions by category, tags, or amount (GET)
 router.get("/filter-transactions", requireSignIn, filterTransactions);
+
+// Search transactions (GET)
+router.get("/search", requireSignIn, searchTransactions);
+
+// Export transactions as CSV (GET)
+router.get("/export", requireSignIn, exportTransactions);
 
 export default router;

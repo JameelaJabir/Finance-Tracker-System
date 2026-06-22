@@ -508,7 +508,7 @@ import cron from "node-cron";
 
 cron.schedule("0 9 * * *", () => {
   console.log("Sending daily budget status notifications...");
-  sendBudgetNotifications(); // Send notifications every day at 9 AM
+  checkBudgetAlerts(); // Send notifications every day at 9 AM
 });
 ///
 

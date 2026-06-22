@@ -1,102 +1,86 @@
 import cron from "node-cron";
 import User from "../models/userModel.js";
 import Transaction from "../models/transactionModel.js";
+import Goal from "../models/goalModel.js";
 import Notification from "../models/notificationModel.js";
 import nodemailer from "nodemailer";
 
-// Set up a cron job to check for alerts every day at midnight (you can adjust as needed)
 cron.schedule("0 0 * * *", async () => {
-    console.log("Running cron job to check for notifications...");
-  // Fetch all users
-  const users = await User.find();
-
-  // Loop through users to check for conditions
-  users.forEach(async (user) => {
-    // Check for unusual spending patterns
-    await checkSpendingPattern(user);
-
-    // Check for bill payment reminders
-    await checkBillPayments(user);
-
-    // Check for upcoming financial goals
-    await checkFinancialGoals(user);
-  });
+  console.log("Running cron job to check for notifications...");
+  try {
+    const users = await User.find();
+    for (const user of users) {
+      await checkSpendingPattern(user);
+      await checkUpcomingRecurringTransactions(user);
+      await checkFinancialGoals(user);
+    }
+  } catch (error) {
+    console.error("Error in notification cron job:", error);
+  }
 });
 
-// Check for unusual spending patterns (e.g., transactions exceeding a set threshold)
 const checkSpendingPattern = async (user) => {
-  const threshold = 1000; // Example threshold for unusual spending
-  const transactions = await Transaction.find({ userId: user._id });
+  const threshold = 1000;
+  const startOfMonth = new Date();
+  startOfMonth.setDate(1);
+  startOfMonth.setHours(0, 0, 0, 0);
 
-  let totalSpending = 0;
-  transactions.forEach((transaction) => {
-    if (transaction.type === "expense") {
-      totalSpending += transaction.amount;
-    }
+  const transactions = await Transaction.find({
+    userId: user._id,
+    type: "expense",
+    date: { $gte: startOfMonth },
   });
 
+  const totalSpending = transactions.reduce((sum, t) => sum + t.amount, 0);
+
   if (totalSpending > threshold) {
-    const message = `Unusual spending alert: You've spent more than $${threshold} this month. Please review your expenses.`;
+    const message = `Unusual spending alert: You've spent $${totalSpending.toFixed(2)} this month, exceeding the $${threshold} threshold. Please review your expenses.`;
     await createNotification(user, message, "spending-alert");
-    sendEmail(user, message); // Optional: send an email as well
+    sendEmail(user, message);
   }
 };
 
-// Check for bill payments due soon
-const checkBillPayments = async (user) => {
-  const currentDate = new Date();
-  const bills = await Bill.find({
+const checkUpcomingRecurringTransactions = async (user) => {
+  const now = new Date();
+  const recurringTransactions = await Transaction.find({
     userId: user._id,
-    dueDate: { $gte: currentDate },
+    isRecurring: true,
+    $or: [{ endDate: { $gte: now } }, { endDate: null }, { endDate: { $exists: false } }],
   });
 
-  bills.forEach(async (bill) => {
-    const dueIn = Math.floor(
-      (new Date(bill.dueDate) - currentDate) / (1000 * 3600 * 24)
-    ); // days remaining
-
-    if (dueIn <= 3) {
-      // If the bill is due within the next 3 days
-      const message = `Reminder: Your bill for ${bill.name} is due in ${dueIn} days.`;
-      await createNotification(user, message, "bill-reminder");
-      sendEmail(user, message); // Optional: send an email reminder
-    }
-  });
+  for (const transaction of recurringTransactions) {
+    const message = `Reminder: Recurring ${transaction.type} of $${transaction.amount} for "${transaction.category}" (${transaction.recurrencePattern}) is active.`;
+    await createNotification(user, message, "bill-reminder");
+    sendEmail(user, message);
+  }
 };
 
-// Check for upcoming financial goals
 const checkFinancialGoals = async (user) => {
-  const goals = await FinancialGoal.find({
+  const now = new Date();
+  const goals = await Goal.find({
     userId: user._id,
-    targetDate: { $gte: new Date() },
+    deadline: { $gte: now },
   });
 
-  goals.forEach(async (goal) => {
+  for (const goal of goals) {
     const remainingDays = Math.floor(
-      (new Date(goal.targetDate) - new Date()) / (1000 * 3600 * 24)
+      (new Date(goal.deadline) - now) / (1000 * 3600 * 24)
     );
 
     if (remainingDays <= 7) {
-      // If the goal is due within the next week
-      const message = `Reminder: Your goal of saving $${goal.amount} is due in ${remainingDays} days.`;
+      const remaining = goal.targetAmount - goal.savedAmount;
+      const message = `Reminder: Your savings goal "${goal.name}" is due in ${remainingDays} day(s). You still need $${remaining.toFixed(2)} to reach your target of $${goal.targetAmount}.`;
       await createNotification(user, message, "goal-reminder");
-      sendEmail(user, message); // Optional: send an email reminder
+      sendEmail(user, message);
     }
-  });
+  }
 };
 
-// Create a notification in the database
 const createNotification = async (user, message, type) => {
-  const notification = new Notification({
-    userId: user._id,
-    message,
-    type,
-  });
-
+  const notification = new Notification({ userId: user._id, message, type });
   await notification.save();
 };
 
-// Send an email notification (optional)
 const sendEmail = async (user, message) => {
   const transporter = nodemailer.createTransport({
     service: "gmail",
@@ -109,14 +93,14 @@ const sendEmail = async (user, message) => {
   const mailOptions = {
     from: process.env.EMAIL_USER,
     to: user.email,
-    subject: "Financial Notification",
+    subject: "Finance Tracker Notification",
     text: message,
   };
 
   try {
     await transporter.sendMail(mailOptions);
   } catch (error) {
-    console.error("Error sending email: ", error);
+    console.error("Error sending email:", error.message);
   }
 };
 

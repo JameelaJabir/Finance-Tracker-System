@@ -198,6 +198,48 @@ export const filterTransactions = async (req, res) => {
   }
 };
 
+// Search transactions by description or category
+export const searchTransactions = async (req, res) => {
+  try {
+    const { q } = req.query;
+    if (!q) return res.status(400).json({ success: false, message: "Search query is required" });
+
+    const transactions = await Transaction.find({
+      userId: req.user._id,
+      $or: [
+        { description: { $regex: q, $options: "i" } },
+        { category: { $regex: q, $options: "i" } },
+        { tags: { $elemMatch: { $regex: q, $options: "i" } } },
+      ],
+    }).sort({ date: -1 });
+
+    res.status(200).json({ success: true, transactions });
+  } catch (error) {
+    res.status(500).json({ success: false, message: "Error searching transactions", error: error.message });
+  }
+};
+
+// Export transactions as CSV
+export const exportTransactions = async (req, res) => {
+  try {
+    const transactions = await Transaction.find({ userId: req.user._id }).sort({ date: -1 });
+
+    const header = "Date,Type,Category,Amount,Description,Tags,Recurring\n";
+    const rows = transactions.map((t) => {
+      const date = new Date(t.date).toLocaleDateString();
+      const tags = (t.tags || []).join("|");
+      return `${date},${t.type},${t.category},${t.amount},"${t.description || ""}","${tags}",${t.isRecurring}`;
+    });
+
+    const csv = header + rows.join("\n");
+    res.setHeader("Content-Type", "text/csv");
+    res.setHeader("Content-Disposition", "attachment; filename=transactions.csv");
+    res.status(200).send(csv);
+  } catch (error) {
+    res.status(500).json({ success: false, message: "Error exporting transactions", error: error.message });
+  }
+};
+
 // Helper function to update a budget after a transaction is created, updated, or deleted
 async function updateBudgetAfterTransaction(userId, category, amount) {
   try {
@@ -239,7 +281,7 @@ async function updateBudgetAfterTransaction(userId, category, amount) {
       oldStatus !== budget.status
     ) {
       // Get user email
-      const user = await userModel.findById(userId);
+      const user = await users.findById(userId);
       if (!user) return;
 
       // Send email notification

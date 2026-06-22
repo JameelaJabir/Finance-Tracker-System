@@ -3,6 +3,44 @@ import Transaction from "../models/transactionModel.js";
 import Budget from "../models/budgetModel.js";
 import Goal from "../models/goalModel.js";
 
+export const getHealthScore = async (req, res) => {
+  try {
+    const userId = req.user._id;
+    const transactions = await Transaction.find({ userId });
+    const budgets = await Budget.find({ userId });
+    const goals = await Goal.find({ userId });
+
+    const income = transactions.filter((t) => t.type === "income").reduce((s, t) => s + t.amount, 0);
+    const expense = transactions.filter((t) => t.type === "expense").reduce((s, t) => s + t.amount, 0);
+
+    // Income vs Expense ratio (40%)
+    const ratio = income === 0 ? 0 : Math.min((income - expense) / income, 1);
+    const ratioScore = Math.max(ratio * 100, 0) * 0.4;
+
+    // Budget adherence (30%) — % of budgets in "safe" status
+    const safeBudgets = budgets.filter((b) => b.status === "safe").length;
+    const budgetScore = budgets.length === 0 ? 30 : (safeBudgets / budgets.length) * 100 * 0.3;
+
+    // Goal progress (30%) — average progress across goals
+    const avgGoalProgress =
+      goals.length === 0
+        ? 0
+        : goals.reduce((s, g) => s + Math.min((g.savedAmount / g.targetAmount) * 100, 100), 0) / goals.length;
+    const goalScore = avgGoalProgress * 0.3;
+
+    const score = Math.round(ratioScore + budgetScore + goalScore);
+
+    let grade = "Poor";
+    if (score >= 80) grade = "Excellent";
+    else if (score >= 60) grade = "Good";
+    else if (score >= 40) grade = "Fair";
+
+    res.status(200).json({ success: true, score: Math.min(score, 100), grade, breakdown: { ratioScore: Math.round(ratioScore), budgetScore: Math.round(budgetScore), goalScore: Math.round(goalScore) } });
+  } catch (error) {
+    res.status(500).json({ success: false, message: "Error calculating health score", error: error.message });
+  }
+};
+
 // Admin Dashboard - Overview of all users, system activity, and financial summaries
 export const getAdminDashboard = async (req, res) => {
   try {
