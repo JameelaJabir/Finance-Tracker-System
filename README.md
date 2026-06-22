@@ -303,8 +303,3 @@ Tokens expire after **7 days**.
 ### Settings (Singleton)
 `categories[]`, `categoryLimits` (Map), `updatedAt`
 
----
-
-## License
-
-MIT
