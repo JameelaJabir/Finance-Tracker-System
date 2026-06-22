@@ -1,6 +1,6 @@
 # Finance Tracker System
 
-A full-stack personal finance management application built with Node.js, Express, MongoDB, and React. Designed for SLIIT SE3040 – Application Frameworks Assignment.
+A full-stack personal finance management application built with Node.js, Express, MongoDB, and React. 
 
 ---
 
